@@ -1,0 +1,96 @@
+- hosts:all
+  vars:
+  - projectName: app1
+  - appPath: /opt/{{projectName}}/
+  - configPath: /opt/config_dir/{{projectName}}/
+  vars_files:
+    - "vars/{{ function }}.yml"
+    - "vars/{{ env }}.yml"
+
+  tasks:
+   	- name: Ensure /opt/projectname/ directory has correct permissions.
+  	  file:
+      path: {{appPath}}
+      state: directory
+      owner: www-data
+      group: www-data
+
+	- name: Ensure /opt/projectname/.ssh directory exists.
+      file:
+      path: {{appPath}}/.ssh
+      state: directory
+      mode: 0700
+      owner: www-data
+      group: www-data
+
+	- name: Ensure GitHub deploy key is present on the server.
+      copy:
+      content: "{{ deploy_private_key }}"
+      dest: {{appPath}}/.ssh/deploy_key
+      mode: 0600
+      owner: www-data
+      group: www-data
+	- name: Ensure setfacl support is present.
+  	  package: name=acl
+
+	- name: Clone the artifactory image to the home path
+      git:
+    	repo: "{{ git_repo }}"
+    	dest: {{appPath}}/
+    	accept_hostkey: yes
+    	key_file: {{appPath}}.ssh/deploy_key
+  	 become_user: www-data
+
+	- name: Rename war file to projectname.war
+  	  command: mv {{appPath}}/*.war {{appPath}}/{{ProjectName}}.war
+    
+    -name: getting the config depends on env 
+      git:
+    	repo: "{{giturl}}"
+    	dest: {{configPath}}/
+    	accept_hostkey: yes
+    	key_file: {{appPath}}.ssh/deploy_key
+  	 become_user: www-data
+
+  	- name: set the xms and xmx
+  	   template:
+       src: setenv.j2
+	   dest: {{appPath}}/bin/setenv.sh
+       notify:
+        - Restart tomcat7
+  handlers:
+    - name: Restart tomcat7
+      service: name=tomcat7 state=restarted
+
+
+
+
+
+
+
+
+
+
+
+-------------------------------------
+group_vars/stage:
+env: stage
+
+group_vars/prod:
+env: prod
+-------------------------------------
+
+vars/stage.yml
+giturl: https://repo-stage.company.com
+
+vars/prod.yml
+giturl: https://repo-prod.company.com
+------
+
+setenv.j2
+=======
+export CATALINA_OPTS="$CATALINA_OPTS -Xms{{ ansible_memtotal_mb*80/100 }}m"
+export CATALINA_OPTS="$CATALINA_OPTS -Xmx{{ ansible_memtotal_mb*80/100 }}m"
+=======
+
+
